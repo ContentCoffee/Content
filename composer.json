@@ -1,0 +1,8 @@
+{
+    "name": "contentcoffee/content",
+    "description": "D8+ module to make content on nodes/terms.",
+    "require": {
+        "php": "^5.6 || ^7.0"
+    },
+    "type": "drupal-module"
+}

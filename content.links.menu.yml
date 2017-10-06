@@ -1,0 +1,13 @@
+content:
+  title: 'Content'
+  route_name: content.collection
+  description: 'Create and manage containers'
+  parent: system.admin_structure
+  weight: 99
+
+content.content_settings_form:
+  title: 'Content Containers'
+  route_name: content.collection
+  description: 'Create and manage containers'
+  parent: content
+  weight: 99

@@ -1,0 +1,3 @@
+content.local_tasks:
+  deriver: 'Drupal\content\Plugin\Derivative\ContentLocalTasks'
+  weight: 2

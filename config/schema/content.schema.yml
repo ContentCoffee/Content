@@ -1,0 +1,38 @@
+content.content_container.*:
+  type: config_entity
+  label: 'Content Container'
+  mapping:
+    id:
+      type: string
+      label: 'ID'
+    label:
+      type: label
+      label: 'Label'
+    host_entity_type:
+      type: string
+      label: 'Host entity type'
+    host_bundles:
+      type: sequence
+      label: 'Host bundles'
+      sequence:
+        type: string
+    child_entity_type:
+      type: string
+      label: 'Child entity type'
+    child_bundles:
+      type: sequence
+      label: 'Child bundles'
+      sequence:
+        type: string
+    hide_single_option_sizes:
+      type: boolean
+      label: 'Hide single option sizes'
+    hide_single_option_alignments:
+      type: boolean
+      label: 'Hide single option alignments'
+    show_size_solumn:
+      type: boolean
+      label: 'Show size column'
+    show_alignment_column:
+      type: boolean
+      label: 'Show alignment column'

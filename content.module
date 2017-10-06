@@ -1,0 +1,599 @@
+<?php
+
+/**
+ * @file
+ * Defines the Content module.
+ *
+ * @category module
+ *
+ * @package Content
+ */
+
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Entity\EntityTypeInterface;
+use Drupal\Core\Field\BaseFieldDefinition;
+use Drupal\Core\Render\Element;
+use Drupal\Core\Url;
+use Drupal\Core\Entity\Display\EntityViewDisplayInterface;
+use Drupal\content\Entity\ContentContainer;
+
+/**
+ * Implements hook_entity_extra_field_info().
+ */
+function content_entity_extra_field_info()
+{
+    $extra = [];
+
+    /** @var \Drupal\content\ContentManager $manager */
+    $manager = \Drupal::service('content.manager');
+    foreach ($manager->getContainers() as $container) {
+        foreach ($container->getHostBundles() as $bundle) {
+            $extra[$container->getHostEntityType()][$bundle]['display']['c_' . $container->id()] = [
+                'label' => 'Content: ' . $container->label(),
+                'description' => $container->label(),
+                'weight' => 0,
+                'visible' => true,
+            ];
+        }
+    }
+
+    return $extra;
+}
+
+/**
+ * Implements hook_entity_type_alter().
+ *
+ * This is very necesarry to provide us with the correct content translation
+ * language (adds the language_content_entity query string when needed.
+ *
+ * TODO: Ideally we only add this on the enabled entity types/bundles
+ * but if we load contentContainer::loadMultiple() then we end up looping.
+ *
+ * @see \Drupal\Core\Entity\Annotation\EntityType
+ *
+ * @param array $entity_types
+ */
+function content_entity_type_alter(array &$entity_types)
+{
+    // Provide defaults for translation info.
+    /** @var $entity_types \Drupal\Core\Entity\EntityTypeInterface[] */
+    foreach ($entity_types as $entity_type) {
+        if ($entity_type->hasLinkTemplate('canonical')) {
+            // Provide default route names for the content paths.
+            if (!$entity_type->hasLinkTemplate('drupal:content-overview')) {
+                // This breaks on taxonomy terms.
+                if ($entity_type->id() == 'node') {
+                    $content_path = $entity_type->getLinkTemplate('canonical') . '/content/{container}';
+                    $entity_type->setLinkTemplate(
+                        'drupal:content-overview',
+                        $content_path
+                    );
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Implements hook_entity_operation().
+ *
+ * @param \Drupal\Core\Entity\EntityInterface $entity
+ *
+ * @return array
+ */
+function content_entity_operation(EntityInterface $entity)
+{
+    $operations = [];
+
+    /** @var \Drupal\content\ContentManager $manager */
+    $manager = \Drupal::service('content.manager');
+    foreach ($manager->getContainers() as $container) {
+        if (!$container->isHost($entity)) {
+            continue;
+        }
+
+        $url = Url::fromRoute(
+            'entity.' . $entity->getEntityTypeId() . '.content_overview',
+            [
+                $entity->getEntityType()->id() => $entity->id(),
+                'container' => $container->id(),
+            ]
+        );
+
+        $operations[$container->id()] = [
+            'title' => $container->label(),
+            'url' => $url,
+            'weight' => 50,
+        ];
+    }
+
+    return $operations;
+}
+
+/**
+ * Implements hook_entity_update().
+ *
+ * @param \Drupal\Core\Entity\EntityInterface $entity
+ */
+function content_entity_update(EntityInterface $entity)
+{
+    if (!$entity instanceof \Drupal\Core\Entity\ContentEntityInterface) {
+        return;
+    }
+    /** @var \Drupal\content\ContentManager $manager */
+    $manager = \Drupal::service('content.manager');
+    if ($manager->isContentBlock($entity)) {
+        $manager->emitChangedEvent($entity, $manager->getContainers($entity));
+    }
+}
+
+function content_entity_insert(EntityInterface $entity)
+{
+    if (!$entity instanceof \Drupal\Core\Entity\ContentEntityInterface) {
+        return;
+    }
+    /** @var \Drupal\content\ContentManager $manager */
+    $manager = \Drupal::service('content.manager');
+    if ($manager->isContentBlock($entity)) {
+        $manager->emitChangedEvent($entity, $manager->getContainers($entity));
+    }
+}
+
+/**
+ * Implements hook_entity_view().
+ *
+ * @param array $build
+ * @param \Drupal\Core\Entity\EntityInterface $entity
+ * @param \Drupal\Core\Entity\Display\EntityViewDisplayInterface $display
+ * @param $view_mode
+ */
+function content_entity_view(
+    array &$build,
+    EntityInterface $entity,
+    EntityViewDisplayInterface $display,
+    $view_mode
+) {
+
+    // Loadup our config.
+    foreach (contentContainer::loadMultiple() as $container) {
+        // Only load if our container is enabled in the display.
+        if ($display->getComponent('c_' . $container->getId())) {
+            // Load up our service and get the content, ordered by weight.
+            $manager = \Drupal::service('content.manager');
+            $entities = $manager->getContent(
+                $entity,
+                $container->getId()
+            );
+
+            $delta = 0;
+            $paragraph_type_count = 1;
+            $paragraph_type_last = false;
+            $sections = [
+                $delta => [
+                    '#theme' => 'content_section',
+                    '#background' => '',
+                    '#items' => [],
+                    '#delta' => $delta,
+                    '#container' => $container->getId(),
+                ],
+            ];
+
+            foreach ($entities as $content) {
+                // If this is a 'break' then add it to the higher level break and switch.
+                if ($content->bundle() == 'break') {
+                    $background = '';
+                    if ($content->get('break_background')->value) {
+                        $background = $content->get('break_background')->value;
+                    }
+
+                    $delta++;
+                    $sections[$delta] = [
+                        '#theme' => 'content_section',
+                        '#background' => $background,
+                        '#items' => [],
+                        '#delta' => $delta,
+                    ];
+
+                    // Reset the paragraph type count coz we're starting a new
+                    // section.
+                    $paragraph_type_count = 1;
+                    $paragraph_type_last = false;
+                } else {
+                    // If it's not a break, just add this paragraph.
+                    // Do look at the type tough.
+                    if ($content->bundle() != $paragraph_type_last) {
+                        $paragraph_type_count = 1;
+                        $paragraph_type_last = $content->bundle();
+                    }
+                    $item = entity_view($content, 'full');
+                    $item['#weight'] = $content->get('content_weight')->getString();
+                    $item['#size'] = $content->get('content_size')->getString();
+                    $item['#alignment'] = $content->get('content_alignment')->getString();
+                    $item['#delta'] = $paragraph_type_count;
+                    $item['#type'] = $content->getEntityTypeId();
+                    $item['#bundle'] = $content->bundle();
+
+
+                    $sections[$delta]['#items'][] = $item;
+                    $paragraph_type_count++;
+                }
+            }
+
+
+            // Fetch empty ones (mainly, the first one).
+            foreach ($sections as $delta => $section) {
+                if (empty($section['#items'])) {
+                    unset($sections[$delta]);
+                }
+            }
+
+            $build['c_' . $container->getId()] = array(
+                '#sections' => $sections,
+                '#theme' => 'content',
+                '#container' => $container->getId(),
+            );
+        }
+    }
+}
+
+/**
+ * Implements hook_theme().
+ *
+ * @param $existing
+ * @param $type
+ * @param $theme
+ * @param $path
+ *
+ * @return array
+ */
+function content_theme($existing, $type, $theme, $path)
+{
+    return [
+        'content' => [
+            'variables' => [
+                'sections' => null,
+                'container' => null,
+            ],
+        ],
+        'content_section' => [
+            'variables' => [
+                'items' => null,
+                'background' => null,
+                'delta' => null,
+                'container' => null,
+            ],
+        ],
+        'paragraph' => [
+            'render element' => 'elements',
+        ],
+        'items' => [
+            'render element' => 'elements',
+        ],
+        // Cards is used to explode 1 paragraph into multiple 'fake'
+        // paragraphs on the frontend. Bv voor autofill paragraph types.
+        'paragraph_cards' => [
+            'variables' => [
+                'cards' => null,
+                'size' => null,
+                'alignment' => null,
+                'type' => null,
+            ],
+        ],
+    ];
+}
+
+/**
+ * Implements hook_theme_suggestions_HOOK().
+ *
+ * @param array $variables
+ *
+ * @return array
+ */
+function content_theme_suggestions_eck_entity(array $variables)
+{
+    $suggestions = [];
+    
+    // Add theme suggestiongs for the type and the the type__bundle.
+    if (!empty($variables['entity']) && isset($variables['entity']['#entity_type'])) {
+        $suggestions = [
+            $variables['entity']['#entity_type'],
+            $variables['entity']['#entity_type'] . '__' . $variables['entity']['#entity']->bundle(),
+        ];
+    }
+
+    return $suggestions;
+}
+
+/**
+ * Prepares variables for paragraph templates.
+ *
+ * @param $variables
+ */
+function content_preprocess_paragraph(&$variables)
+{
+    $paragraph = $variables['entity']['#entity'];
+
+    $variables['bundle'] = $paragraph->bundle();
+
+    // Add size.
+    $size = $paragraph->get('content_size')->value;
+    if (strlen($size) > 0) {
+        $variables['content_size'] = $size;
+    }
+
+    $alignment = $paragraph->get('content_alignment')->value;
+    if (strlen($size) > 0) {
+        $variables['content_alignment'] = $alignment;
+    }
+
+    // Add delta.
+    $variables['content_delta'] = 0;
+    if (isset($variables['entity']['#delta'])) {
+        $variables['content_delta'] = (string) $variables['entity']['#delta'];
+    }
+
+    $strip = [
+        'created',
+        'content_size',
+        'content_alignment',
+        'content_weight',
+        'content_parent',
+    ];
+
+    // Add to render array except size.
+    $variables['content'] = [];
+    foreach (Element::children($variables['entity']) as $key) {
+        if (!empty($variables['entity'][$key]['#field_name'])
+            && !in_array($variables['entity'][$key]['#field_name'], $strip)
+            ) {
+            $variables['content'][] = $variables['entity'][$key];
+        }
+    }
+}
+
+/**
+ * Implements hook_entity_base_field_info().
+ *
+ * More intel at https://www.drupal.org/node/1879542
+ *
+ * @param \Drupal\Core\Entity\EntityTypeInterface $entity_type
+ *
+ * @return array
+ */
+function content_entity_base_field_info(EntityTypeInterface $entity_type)
+{
+    $fields = array();
+    foreach (contentContainer::loadMultiple() as $conf) {
+        // Match. This is kind of wrong because we're going to overload all
+        // the bundles of the entity type with our fields.
+        if ($entity_type->id() == $conf->getChildEntityType()) {
+            $fields['content_size'] = BaseFieldDefinition::create('list_string')
+                ->setLabel(t('Size'))
+                ->setDescription(t('Select the size.'))
+                ->setRequired(true)
+                ->setSetting('allowed_values', _content_sizes())
+                ->setSetting('default_value', 'full')
+                ->setDisplayConfigurable('form', true)
+                ->setDisplayOptions(
+                    'form',
+                    array(
+                        'type' => 'options_select',
+                        'settings' => array(
+                           'display_label' => true,
+                            ),
+                        'weight' => 20,
+                        )
+                )
+                ->setDisplayOptions(
+                    'view',
+                    array(
+                        'label' => 'hidden',
+                        'type' => 'string',
+                        'weight' => -5,
+                    )
+                );
+
+            $fields['content_alignment'] = BaseFieldDefinition::create('list_string')
+                ->setLabel(t('Alignment'))
+                ->setDescription(t('Select the Alignment.'))
+                ->setRequired(true)
+                ->setSetting('allowed_values', _content_alignments())
+                ->setSetting('default_value', 'left')
+                ->setDisplayConfigurable('form', true)
+                ->setDisplayOptions(
+                    'form',
+                    array(
+                        'type' => 'options_select',
+                        'settings' => array(
+                            'display_label' => true,
+                        ),
+                        'weight' => 20,
+                    )
+                )
+                ->setDisplayOptions(
+                    'view',
+                    array(
+                        'label' => 'hidden',
+                        'type' => 'string',
+                        'weight' => -5,
+                    )
+                );
+
+            $fields['content_weight'] = BaseFieldDefinition::create('integer')
+                ->setLabel(t('Weight'))
+                ->setRequired(true)
+                ->setSetting('default_value', 0)
+                ->setDescription(t('The weight of this child.'))
+                ->setDisplayConfigurable('form', true)
+                ->setDisplayOptions(
+                    'form',
+                    array(
+                        'type' => 'hidden',
+                        'settings' => array(
+                            'display_label' => true,
+                        ),
+                    'weight' => 20,
+                    )
+                )
+                ->setDisplayOptions(
+                    'view',
+                    array(
+                        'label' => 'hidden',
+                        'type' => 'string',
+                        'weight' => -5,
+                    )
+                );
+
+            // The parent is an entity reference to the parent entity, which allows
+            // to access the parent id with $entity->parent->target_id and the parent
+            // entity with $entity->parent->entity.
+            $fields['content_parent'] = BaseFieldDefinition::create('integer')
+                ->setLabel(t('Host'))
+                ->setDescription(t('The entity id of the host.'))
+                ->setRequired(true)
+                ->setReadOnly(true)
+                ->setDisplayConfigurable('form', true)
+                ->setDisplayOptions(
+                    'form',
+                    array(
+                        'type' => 'hidden',
+                        'settings' => array(
+                            'display_label' => true,
+                        ),
+                        'weight' => 20,
+                    )
+                )
+                ->setDisplayOptions(
+                    'view',
+                    array(
+                        'label' => 'hidden',
+                        'type' => 'string',
+                        'weight' => -5,
+                    )
+                );
+
+            $fields['content_parent_type'] = BaseFieldDefinition::create('string')
+                ->setLabel(t('Host Type'))
+                ->setDescription(t('The entity type of the host.'))
+                ->setRequired(true)
+                ->setReadOnly(true)
+                ->setDisplayConfigurable('form', true)
+                ->setDisplayOptions(
+                    'form',
+                    array(
+                        'type' => 'hidden',
+                        'settings' => array(
+                            'display_label' => true,
+                        ),
+                        'weight' => 20,
+                    )
+                );
+
+            $fields['content_container'] = BaseFieldDefinition::create('string')
+                ->setLabel(t('Container'))
+                ->setDescription(t('The container in the host.'))
+                ->setRequired(true)
+                ->setReadOnly(true)
+                ->setSetting('default_value', 'content')
+                ->setDisplayConfigurable('form', true)
+                ->setDisplayOptions(
+                    'form',
+                    array(
+                    'type' => 'hidden',
+                    'settings' => array(
+                        'display_label' => true,
+                    ),
+                      'weight' => 20,
+                    )
+                );
+        }
+    }
+
+    return $fields;
+}
+
+/**
+ * Default list of available sizes.
+ */
+function _content_sizes()
+{
+    return [
+        'small' => t('Small'),
+        'medium' => t('Medium'),
+        'large' => t('Large'),
+        'full' => t('Full'),
+    ];
+}
+
+/**
+ * Default list of available sizes.
+ */
+function _content_alignments()
+{
+    return [
+        'left' => t('Left'),
+        'right' => t('Right'),
+        'justified' => t('Justified'),
+    ];
+}
+
+/**
+ * Implements hook_form_alter().
+ *
+ * @param $form
+ * @param \Drupal\Core\Form\FormStateInterface $form_state
+ * @param $form_id
+ */
+function content_form_alter(&$form, \Drupal\Core\Form\FormStateInterface $form_state, $form_id)
+{
+    // Go through all the containers.
+    /** @var ContentContainer $conf */
+    foreach (contentContainer::loadMultiple() as $conf) {
+        // Get the config.
+        $config = $conf->getConfig();
+
+        // Establish entity type.
+        $type = $config['child_entity_type'];
+
+        // Go through the bundles.
+        foreach ($config['child_bundles'] as $bundle) {
+            // Build up what the form id for this child would be.
+            $test = $config['child_entity_type'] . "_" . $bundle . "_form";
+
+            // Sweet baby jesus we got a child entity form.
+            if ($test == $form_id) {
+                // What do other modules have to say about the sizes.
+                $sizes = \Drupal::moduleHandler()->invokeAll('content_sizes_alter', [$type, $bundle]);
+                $alignments = \Drupal::moduleHandler()->invokeAll('content_alignments_alter', [$type, $bundle]);
+
+                // Ok did we have some sizes?
+                if (count($sizes) > 0) {
+                    // Alter the form.
+                    $form['content_size']['widget']['#options'] = $sizes;
+                }
+
+                // Did we have some alignments.
+                if (count($alignments) > 0) {
+                    // Alter the form.
+                    $form['content_alignment']['widget']['#options'] = $alignments;
+                }
+
+                // Did we get 1 size?
+                if (count($sizes) == 1 && $config['hide_single_option_sizes']) {
+                    unset($form['content_size']);
+                    // Alter the form.
+                    $form['content_size']['#type'] = "hidden";
+                    $form['content_size']['#value'] = [array_keys($sizes)[0]];
+                }
+
+                // Did we have 1 alignment?
+                if (count($alignments) == 1 && $config['hide_single_option_alignments']) {
+                    unset($form['content_alignment']);
+                    // Alter the form.
+                    $form['content_alignment']['#type'] = "hidden";
+                    $form['content_alignment']['#value'] = [array_keys($alignments)[0]];
+                }
+            }
+        }
+    }
+}

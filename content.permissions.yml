@@ -1,0 +1,4 @@
+administer content:
+  title: 'administer content'
+  description: 'Administer content'
+  restrict access: true

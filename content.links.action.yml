@@ -1,0 +1,5 @@
+content.container.add_form:
+  route_name: 'entity.content_container.add_form'
+  title: 'Add container'
+  appears_on:
+    - content.collection

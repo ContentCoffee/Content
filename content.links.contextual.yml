@@ -1,0 +1,3 @@
+content.contextual_links:
+  deriver: 'Drupal\content\Plugin\Derivative\ContentContextualLinks'
+  weight: 2

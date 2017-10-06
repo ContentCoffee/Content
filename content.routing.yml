@@ -1,0 +1,39 @@
+content:
+  path: '/admin/config/content'
+  defaults:
+    _entity_list: 'content_container'
+    _title: 'Content - Container configuration'
+  requirements:
+    _permission: 'administer content'
+
+content.collection:
+  path: '/admin/config/content/containers'
+  defaults:
+    _entity_list: 'content_container'
+    _title: 'Content - Container configuration'
+  requirements:
+    _permission: 'administer content'
+
+entity.content_container.add_form:
+  path: '/admin/config/content/containers/add'
+  defaults:
+    _entity_form: 'content_container.add'
+    _title: 'Add container'
+  requirements:
+    _permission: 'administer content'
+
+entity.content_container.edit_form:
+  path: '/admin/config/content/containers/{content_container}'
+  defaults:
+    _entity_form: 'content_container.edit'
+    _title: 'Edit container'
+  requirements:
+    _permission: 'administer content'
+
+entity.content_container.delete_form:
+  path: '/admin/config/content/containers/{content_container}/delete'
+  defaults:
+    _entity_form: 'content_container.delete'
+    _title: 'Delete container'
+  requirements:
+    _permission: 'administer content'

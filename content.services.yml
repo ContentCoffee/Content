@@ -1,0 +1,38 @@
+services:
+  content.manager:
+    class: Drupal\content\ContentManager
+    arguments:
+      - '@entity_type.manager'
+      - '@event_dispatcher'
+      - '@cache.data'
+  content.subscriber:
+    class: Drupal\content\Routing\ContentRouteSubscriber
+    arguments:
+      - '@entity_type.manager'
+    tags:
+      - { name: event_subscriber }
+  content.config_subscriber:
+    class: Drupal\content\EventSubscriber\ContentConfigSubscriber
+    tags:
+      - { name: event_subscriber }
+  content.contentblock_subscriber:
+    class: Drupal\content\EventSubscriber\ContentBlockSubscriber
+    arguments: ['@content.manager']
+    tags:
+      - { name: event_subscriber }
+  content.container_access:
+    class: Drupal\content\Access\ContentContainerAccessCheck
+    arguments:
+      - '@entity_type.manager'
+    tags:
+      - { name: access_check, applies_to: _content_container_view_access }
+  content.descriptive_titles:
+    class: Drupal\content\ContentDescriptiveTitles
+    arguments:
+      - '@current_route_match'
+      - '@content.entity_type.bundle.info'
+      - '@entity_type.manager'
+      - '@event_dispatcher'
+  content.entity_type.bundle.info:
+    class: Drupal\content\Entity\EntityTypeBundleInfo
+    parent: entity_type.bundle.info
