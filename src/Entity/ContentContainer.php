@@ -252,7 +252,7 @@ class ContentContainer extends ConfigEntityBase implements ContentContainerInter
     /**
      * @return \Drupal\Core\Entity\EntityTypeBundleInfo|object
      */
-    private function entityTypeBundleInfo()
+    protected function entityTypeBundleInfo()
     {
         if (!$this->entityTypeBundleInfo) {
             $this->entityTypeBundleInfo = $this->container()->get('entity_type.bundle.info');

@@ -57,8 +57,8 @@ class ContentContextualLinks extends DeriverBase implements ContainerDeriverInte
             $key = $config['host_entity_type'] . '.' . $config['id'];
 
             $this->derivatives[$key]['title'] = $config['label'];
-            $this->derivatives[$key]['title']['route_name'] = 'entity.' . $config['host_entity_type'] . '.content_overview';
-            $this->derivatives[$key]['title']['group'] = ['host_entity_type'];
+            $this->derivatives[$key]['route_name'] = 'entity.' . $config['host_entity_type'] . '.content_overview';
+            $this->derivatives[$key]['group'] = $config['host_entity_type'];
         }
 
         return parent::getDerivativeDefinitions($base_plugin_definition);
