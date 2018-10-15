@@ -305,53 +305,6 @@ function content_theme_suggestions_eck_entity(array $variables)
 }
 
 /**
- * Prepares variables for paragraph templates.
- *
- * @param $variables
- */
-function content_preprocess_paragraph(&$variables)
-{
-    $paragraph = $variables['entity']['#entity'];
-
-    $variables['bundle'] = $paragraph->bundle();
-
-    // Add size.
-    $size = $paragraph->get('content_size')->value;
-    if (strlen($size) > 0) {
-        $variables['content_size'] = $size;
-    }
-
-    $alignment = $paragraph->get('content_alignment')->value;
-    if (strlen($size) > 0) {
-        $variables['content_alignment'] = $alignment;
-    }
-
-    // Add delta.
-    $variables['content_delta'] = 0;
-    if (isset($variables['entity']['#delta'])) {
-        $variables['content_delta'] = (string) $variables['entity']['#delta'];
-    }
-
-    $strip = [
-        'created',
-        'content_size',
-        'content_alignment',
-        'content_weight',
-        'content_parent',
-    ];
-
-    // Add to render array except size.
-    $variables['content'] = [];
-    foreach (Element::children($variables['entity']) as $key) {
-        if (!empty($variables['entity'][$key]['#field_name'])
-            && !in_array($variables['entity'][$key]['#field_name'], $strip)
-            ) {
-            $variables['content'][] = $variables['entity'][$key];
-        }
-    }
-}
-
-/**
  * Implements hook_entity_base_field_info().
  *
  * More intel at https://www.drupal.org/node/1879542
