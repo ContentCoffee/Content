@@ -21,7 +21,7 @@ class ContentEntityLabelEvent extends Event
     /**
      * Constructor.
      */
-    public function __construct(Entity $entity, $fieldName, FieldConfigInterface $fieldConfig)
+    public function __construct($entity, $fieldName, FieldConfigInterface $fieldConfig)
     {
         $this->entity = $entity;
         $this->fieldName = $fieldName;
@@ -35,7 +35,7 @@ class ContentEntityLabelEvent extends Event
      * @param Entity $entity
      *   Current entity.
      */
-    public function setEntity(Entity $entity)
+    public function setEntity($entity)
     {
         $this->entity = $entity;
     }
