@@ -171,33 +171,6 @@ class ContentDescriptiveTitles
      */
     private function getBundleLabel($entity, $field)
     {
-        $bundleInfo = $this->entityTypeBundleInfo->getAllBundleInfo();
-        $container = $this->getContainerType();
-        $fieldConfig = $entity->getFieldDefinitions()[$field];
-        $settings = $fieldConfig->getSetting('handler_settings');
-        $bundleNames = $settings['target_bundles'] ? [$fieldConfig->getTargetBundle()] : [];
-        $bundleLabel = 'item';
-
-        if (empty($bundleNames) || !($fieldConfig instanceof FieldConfig) || $fieldConfig->get('entity_type') !== $container) {
-            return false;
-        }
-
-        $event = new ContentEntityLabelEvent($entity, $field, $fieldConfig);
-        $this->eventDispatcher->dispatch(ContentEntityLabelEvent::NAME, $event);
-        if ($event->getLabel()) {
-            return $event->getLabel();
-        }
-
-        if (count($bundleNames) === 1) {
-            if ($fieldConfig->getFieldStorageDefinition()->getType() === 'entity_reference') {
-                $targetType = $fieldConfig->getFieldStorageDefinition()->getSetting('target_type');
-            } else {
-                $targetType = $fieldConfig->get('entity_type');
-            }
-
-            $bundleLabel = $bundleInfo[$targetType][array_values($bundleNames)[0]]['label'];
-        }
-
-        return $bundleLabel;
+        return "item";
     }
 }
