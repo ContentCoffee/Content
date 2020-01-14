@@ -2,6 +2,8 @@
 
 namespace Drupal\content;
 
+use Drupal\content\Entity\EntityTypeBundleInfo;
+use Drupal\content\Event\ContentEntityLabelEvent;
 use Drupal\Core\Entity\ContentEntityBase;
 use Drupal\Core\Entity\EntityTypeManager;
 use Drupal\Core\Render\Element;
@@ -9,168 +11,192 @@ use Drupal\Core\Routing\CurrentRouteMatch;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\field\Entity\FieldConfig;
-use Drupal\content\Entity\EntityTypeBundleInfo;
-use Drupal\content\Event\ContentEntityLabelEvent;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 class ContentDescriptiveTitles
 {
-    use StringTranslationTrait;
+  use StringTranslationTrait;
 
-    /** @var CurrentRouteMatch */
-    protected $currentRouteMatch;
+  /** @var CurrentRouteMatch */
+  protected $currentRouteMatch;
 
-    /** @var EntityTypeBundleInfo */
-    protected $entityTypeBundleInfo;
+  /** @var EntityTypeBundleInfo */
+  protected $entityTypeBundleInfo;
 
-    /** @var EntityTypeManager */
-    protected $entityTypeManager;
+  /** @var EntityTypeManager */
+  protected $entityTypeManager;
 
-    /** @var EventDispatcherInterface */
-    private $eventDispatcher;
+  /** @var EventDispatcherInterface */
+  private $eventDispatcher;
 
-    /**
-     * ContentDescriptiveTitles constructor.
-     * @param CurrentRouteMatch $currentRouteMatch
-     * @param EntityTypeBundleInfo $entityTypeBundleInfo
-     * @param EntityTypeManager $entityTypeManager
-     * @param EventDispatcherInterface $eventDispatcher
-     */
-    public function __construct(
-        CurrentRouteMatch $currentRouteMatch,
-        EntityTypeBundleInfo $entityTypeBundleInfo,
-        EntityTypeManager $entityTypeManager,
-        EventDispatcherInterface $eventDispatcher
-    ) {
-        $this->currentRouteMatch = $currentRouteMatch;
-        $this->entityTypeBundleInfo = $entityTypeBundleInfo;
-        $this->entityTypeManager = $entityTypeManager;
-        $this->eventDispatcher = $eventDispatcher;
+  /**
+   * ContentDescriptiveTitles constructor.
+   * @param CurrentRouteMatch $currentRouteMatch
+   * @param EntityTypeBundleInfo $entityTypeBundleInfo
+   * @param EntityTypeManager $entityTypeManager
+   * @param EventDispatcherInterface $eventDispatcher
+   */
+  public function __construct(
+    CurrentRouteMatch $currentRouteMatch,
+    EntityTypeBundleInfo $entityTypeBundleInfo,
+    EntityTypeManager $entityTypeManager,
+    EventDispatcherInterface $eventDispatcher
+  )
+  {
+    $this->currentRouteMatch = $currentRouteMatch;
+    $this->entityTypeBundleInfo = $entityTypeBundleInfo;
+    $this->entityTypeManager = $entityTypeManager;
+    $this->eventDispatcher = $eventDispatcher;
+  }
+
+  /**
+   * More descriptive 'Add more' button when adding referenced entities to a content block
+   * @param array $form
+   * @param ContentEntityBase $entity
+   */
+  public function updateAddMoreButtonTitle(array &$form, ContentEntityBase $entity)
+  {
+    foreach ($this->getFormFields($form) as $field) {
+      if (!isset($form[$field]['widget']['add_more'])) {
+        continue;
+      }
+
+      if ($bundleLabel = $this->getBundleLabel($entity, $field)) {
+        $form[$field]['widget']['add_more']['#value'] =
+          new TranslatableMarkup(sprintf('Add new %s', $bundleLabel));
+      }
+    }
+  }
+
+  /**
+   * More descriptive 'Create subcontent' button when adding more subcontent
+   * @param array $form
+   * @param ContentEntityBase $entity
+   */
+  public function updateAddAnotherSubContentButtonTitle(array &$form, ContentEntityBase $entity)
+  {
+    foreach ($this->getFormFields($form) as $field) {
+      if (!isset($form[$field]['widget']['actions']['ief_add'])) {
+        continue;
+      }
+
+      if ($bundleLabel = $this->getBundleLabel($entity, $field)) {
+        $form[$field]['widget']['actions']['ief_add']['#value'] =
+          new TranslatableMarkup(sprintf('Add new %s', $bundleLabel));
+      }
+    }
+  }
+
+  /**
+   * @return mixed
+   */
+  private function getContainer()
+  {
+    $containers = $this
+      ->entityTypeManager
+      ->getStorage('content_container')
+      ->loadByProperties(['id' => $this->currentRouteMatch->getParameter('container')]);
+    return reset($containers);
+  }
+
+  /**
+   * @return string
+   */
+  private function getContainerType()
+  {
+    return $this->getContainer()->getChildEntityType();
+  }
+
+  /**
+   * @param array $form
+   * @return array
+   */
+  private function getFormFields($form)
+  {
+    return Element::children($form);
+  }
+
+  /**
+   * @return TranslatableMarkup
+   */
+  public function getPageTitle()
+  {
+    $bundleInfo = $this->entityTypeBundleInfo->getAllBundleInfo();
+    $container = $this->getContainerType();
+    $hostType = $this->currentRouteMatch->getParameter('host_type_id');
+    $host = $this->currentRouteMatch->getParameter($hostType);
+
+    if ($childId = $this->currentRouteMatch->getParameter('child_id')) {
+      $child = $this
+        ->entityTypeManager
+        ->getStorage($container)
+        ->load($childId);
+
+      $bundle = $child->bundle();
+    } else {
+      // Get bundle from its parameter
+      $bundle = $this->currentRouteMatch->getParameter('bundle');
     }
 
-    /**
-     * More descriptive 'Add more' button when adding referenced entities to a content block
-     * @param array $form
-     * @param ContentEntityBase $entity
-     */
-    public function updateAddMoreButtonTitle(array &$form, ContentEntityBase $entity)
-    {
-        foreach ($this->getFormFields($form) as $field) {
-            if (!isset($form[$field]['widget']['add_more'])) {
-                continue;
-            }
+    // Build title
+    $host = $host->label() ?: $bundleInfo[$hostType][$host->bundle()]['label'];
+    $type = $bundleInfo[$container][$bundle]['label'];
 
-            if ($bundleLabel = $this->getBundleLabel($entity, $field)) {
-                $form[$field]['widget']['add_more']['#value'] =
-                    new TranslatableMarkup(sprintf('Add another %s', $bundleLabel));
-            }
-        }
+    $routeName = $this->currentRouteMatch->getRouteName();
+    switch (true) {
+      case strpos($routeName, 'content_add') !== false:
+        return $this->t(
+          'Add new %type to %host',
+          [
+            '%type' => $type,
+            '%host' => $host,
+          ]
+        );
+      case strpos($routeName, 'content_edit') !== false:
+        return $this->t(
+          'Edit %type from %host',
+          [
+            '%type' => $type,
+            '%host' => $host,
+          ]
+        );
+      default:
+        return new TranslatableMarkup('');
     }
+  }
 
-    /**
-     * More descriptive 'Create subcontent' button when adding more subcontent
-     * @param array $form
-     * @param ContentEntityBase $entity
-     */
-    public function updateAddAnotherSubContentButtonTitle(array &$form, ContentEntityBase $entity)
-    {
-        foreach ($this->getFormFields($form) as $field) {
-            if (!isset($form[$field]['widget']['actions']['ief_add'])) {
-                continue;
-            }
+  /**
+   * @param $entity
+   * @param $field
+   * @return bool|string
+   */
+  private function getBundleLabel($entity, $field)
+  {
+    $bundleInfo = $this->entityTypeBundleInfo->getAllBundleInfo();
 
-            if ($bundleLabel = $this->getBundleLabel($entity, $field)) {
-                $form[$field]['widget']['actions']['ief_add']['#value'] =
-                    new TranslatableMarkup(sprintf('Add another %s', $bundleLabel));
-            }
-        }
+    $container = $this->getContainerType();
+    $fieldConfig = $entity->getFieldDefinitions()[$field];
+    $settings = $fieldConfig->getSetting('handler_settings');
+    $bundleNames = $settings['target_bundles'] ? [$fieldConfig->getTargetBundle()] : [];
+    $bundleLabel = 'item';
+    if (empty($bundleNames) || !($fieldConfig instanceof FieldConfig) || $fieldConfig->get('entity_type') !== $container) {
+      return false;
     }
-
-    /**
-     * @return mixed
-     */
-    private function getContainer()
-    {
-        $containers = $this
-            ->entityTypeManager
-            ->getStorage('content_container')
-            ->loadByProperties(['id' => $this->currentRouteMatch->getParameter('container')]);
-        return reset($containers);
+    $event = new ContentEntityLabelEvent($entity, $field, $fieldConfig);
+    $this->eventDispatcher->dispatch(ContentEntityLabelEvent::NAME, $event);
+    if ($event->getLabel()) {
+      return $event->getLabel();
     }
+    if (count($bundleNames) === 1) {
+      if ($fieldConfig->getFieldStorageDefinition()->getType() === 'entity_reference') {
+        $targetType = $fieldConfig->getFieldStorageDefinition()->getSetting('target_type');
+      } else {
+        $targetType = $fieldConfig->get('entity_type');
+      }
 
-    /**
-     * @return string
-     */
-    private function getContainerType()
-    {
-        return $this->getContainer()->getChildEntityType();
+      $bundleLabel = $bundleInfo[$targetType][array_values($settings['target_bundles'])[0]]['label'];
+
     }
-
-    /**
-     * @param array $form
-     * @return array
-     */
-    private function getFormFields($form)
-    {
-        return Element::children($form);
-    }
-
-    /**
-     * @return TranslatableMarkup
-     */
-    public function getPageTitle()
-    {
-        $bundleInfo = $this->entityTypeBundleInfo->getAllBundleInfo();
-        $container = $this->getContainerType();
-        $hostType = $this->currentRouteMatch->getParameter('host_type_id');
-        $host = $this->currentRouteMatch->getParameter($hostType);
-
-        if ($childId = $this->currentRouteMatch->getParameter('child_id')) {
-            $child = $this
-                ->entityTypeManager
-                ->getStorage($container)
-                ->load($childId);
-
-            $bundle = $child->bundle();
-        } else {
-            // Get bundle from its parameter
-            $bundle = $this->currentRouteMatch->getParameter('bundle');
-        }
-
-        // Build title
-        $host = $host->label() ?: $bundleInfo[$hostType][$host->bundle()]['label'];
-        $type = $bundleInfo[$container][$bundle]['label'];
-
-        $routeName = $this->currentRouteMatch->getRouteName();
-        switch (true) {
-            case strpos($routeName, 'content_add') !== false:
-                return $this->t(
-                    'Add new %type to %host',
-                    [
-                        '%type' => $type,
-                        '%host' => $host,
-                    ]
-                );
-            case strpos($routeName, 'content_edit') !== false:
-                return $this->t(
-                    'Edit %type from %host',
-                    [
-                        '%type' => $type,
-                        '%host' => $host,
-                    ]
-                );
-            default:
-                return new TranslatableMarkup('');
-        }
-    }
-
-    /**
-     * @param $entity
-     * @param $field
-     * @return bool|string
-     */
-    private function getBundleLabel($entity, $field)
-    {
-        return "item";
-    }
+    return $bundleLabel;
+  }
 }
